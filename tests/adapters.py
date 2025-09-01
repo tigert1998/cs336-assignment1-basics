@@ -9,6 +9,8 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from tests.xiaohu.tokenizer import BPETokenizer
+
 
 def run_linear(
     d_in: int,
@@ -452,7 +454,9 @@ def run_cross_entropy(
     raise NotImplementedError
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -559,7 +563,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return BPETokenizer.from_params(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -589,4 +593,8 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    tokenizer = BPETokenizer(special_tokens)
+    with open(input_path, "rb") as f:
+        content = f.read().decode("utf-8")
+    tokenizer.train(content, vocab_size)
+    return tokenizer.export_params()
