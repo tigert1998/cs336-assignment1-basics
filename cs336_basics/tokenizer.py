@@ -64,9 +64,7 @@ class BPETokenizer:
             special_tokens if special_tokens is not None else []
         )
         if len(self.special_tokens) > 0:
-            self._special_token_pattern = (
-                f"({'|'.join(re.escape(s) for s in self.special_tokens)})"
-            )
+            self._special_token_pattern = f"({'|'.join(re.escape(s) for s in sorted(self.special_tokens, key=lambda s: -len(s)))})"
         else:
             self._special_token_pattern = None
 
@@ -125,7 +123,6 @@ class BPETokenizer:
         for new_idx in sorted(self.merges.keys()):
             current_merge = self.merges[new_idx]
             ls = list(merge_to_nodes[current_merge].keys())
-            del merge_to_nodes[current_merge]
             for node in ls:
                 if not (
                     node.r is not None
@@ -148,6 +145,7 @@ class BPETokenizer:
                 if r.r is not None:
                     r.r.l = node
                 node.idx = new_idx
+                r.idx = -1
 
         indices = []
         for group_id in range(len(groups)):
@@ -208,7 +206,7 @@ class BPETokenizer:
         merges = [None for _ in range(num_merges)]
         for i in range(len(initial_vocab)):
             vocab[i] = initial_vocab[i]
-        merge_to_nodes: Dict[Merge, Set[Node]] = defaultdict(set)
+        merge_to_nodes: Dict[Merge, Dict[Node, None]] = defaultdict(dict)
         offset = 0
         for g in groups:
             for i, idx in enumerate(g):
@@ -218,7 +216,7 @@ class BPETokenizer:
                 if i + 1 < len(g):
                     merge = Merge(idx, g[i + 1])
                     freq_table[merge] += 1
-                    merge_to_nodes[merge].add(nodes[offset + i])
+                    merge_to_nodes[merge][nodes[offset + i]] = None
             offset += len(g)
         heap = [TrainHeapItem(k, v, vocab) for k, v in freq_table.items()]
         heapq.heapify(heap)
@@ -236,7 +234,7 @@ class BPETokenizer:
             merges[merge_id] = top.merge
             new_idx = merge_id + len(initial_vocab)
             vocab[new_idx] = vocab[top.merge.idx0] + vocab[top.merge.idx1]
-            for node in list(merge_to_nodes[top.merge]):
+            for node in list(merge_to_nodes[top.merge].keys()):
                 if not (
                     node.r is not None
                     and node.idx == top.merge.idx0
@@ -246,18 +244,18 @@ class BPETokenizer:
                     continue
                 if node.l is not None:
                     merge = Merge(node.l.idx, node.idx)
-                    merge_to_nodes[merge].discard(node.l)
+                    del merge_to_nodes[merge][node.l]
                     freq_table[merge] -= 1
                     merge = Merge(node.l.idx, new_idx)
-                    merge_to_nodes[merge].add(node.l)
+                    merge_to_nodes[merge][node.l] = None
                     freq_table[merge] += 1
                     heapq.heappush(heap, TrainHeapItem(merge, freq_table[merge], vocab))
                 if node.r.r is not None:
                     merge = Merge(node.r.idx, node.r.r.idx)
-                    merge_to_nodes[merge].discard(node.r)
+                    del merge_to_nodes[merge][node.r]
                     freq_table[merge] -= 1
                     merge = Merge(new_idx, node.r.r.idx)
-                    merge_to_nodes[merge].add(node)
+                    merge_to_nodes[merge][node] = None
                     freq_table[merge] += 1
                     heapq.heappush(heap, TrainHeapItem(merge, freq_table[merge], vocab))
                 r = node.r
@@ -265,6 +263,7 @@ class BPETokenizer:
                 if r.r is not None:
                     r.r.l = node
                 node.idx = new_idx
+                r.idx = -1
             del freq_table[top.merge]
             del merge_to_nodes[top.merge]
 
